@@ -1,0 +1,60 @@
+#include <msp430.h>
+#include "PWM.h"      // For servo control (e.g., valve adjustment)
+#include "GPIO.h"     // For LEDs, Pilot Valve, and Call to Heat
+#include "ADC.h"      // For Thermistor, Thermocouple, and Potentiometer
+#include "UART.h"     // For serial communication
+
+void initSystem();    // Function to initialize all modules
+
+void main(void) {
+    WDTCTL = WDTPW | WDTHOLD;   // Stop watchdog timer
+    initSystem();               // Initialize all peripherals and modules
+
+    while (1) {
+        // 1. Read ADC Sensors
+        unsigned int thermistorReading = readThermistor();
+        unsigned int thermocoupleReading = readThermocouple();
+        unsigned int potentiometerReading = readPotentiometer();
+
+        // 2. Adjust Servo Using Potentiometer
+        int angle = (potentiometerReading * 180) / 1023;  // Map ADC value to 0–180 degrees
+        setServoAngle(angle);  // Move servo to the desired angle
+
+        // 3. RGB LED Status Based on Thermocouple
+        if (thermocoupleReading > 700) {          // High temperature
+            setRGBLED(1, 0, 0);                   // Red LED ON
+        } else if (thermocoupleReading > 400) {   // Medium temperature
+            setRGBLED(0, 1, 0);                   // Green LED ON
+        } else {
+            setRGBLED(0, 0, 1);                   // Blue LED ON
+        }
+
+        // 4. Transmit Data via UART
+        UART_writeString("Thermistor: ");
+        UART_writeChar((thermistorReading / 100) + '0'); // Send hundreds place
+        UART_writeChar(((thermistorReading / 10) % 10) + '0'); // Send tens place
+        UART_writeChar((thermistorReading % 10) + '0'); // Send ones place
+        UART_writeString("\n");
+
+        // 5. Call to Heat Logic
+        if (thermistorReading < 500) {  // If temperature is below threshold
+            requestHeat();              // Activate heating components
+        } else {
+            stopHeat();                 // Deactivate heating components
+        }
+
+        __delay_cycles(1000000); // Delay for system stability (adjust as needed)
+    }
+}
+
+void initSystem() {
+    PM5CTL0 &= ~LOCKLPM5;  // Unlock GPIO settings for MSP430FR2355
+    initUART();            // Initialize UART for serial communication
+    initRGBLED();          // Set up RGB LED GPIO pins
+    initIgnitorLED();      // Set up Ignitor LED GPIO pins
+    initPilotValve();      // Set up Pilot Valve GPIO pins
+    initCallToHeat();      // Configure Call to Heat GPIO input
+    initThermistor();      // Initialize ADC for Thermistor
+    initThermocouple();    // Initialize ADC for Thermocouple
+    initPotentiometer();   // Initialize ADC for Potentiometer
+}
